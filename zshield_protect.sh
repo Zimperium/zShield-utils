@@ -5,6 +5,15 @@
 # Usage: see --help or README in repo.
 
 set -euo pipefail
+# set -x
+
+# Set nullglob option for compatibility with bash and zsh
+if [[ -n "${BASH_VERSION:-}" ]]; then
+    shopt -s nullglob
+elif [[ -n "${ZSH_VERSION:-}" ]]; then
+    setopt null_glob
+fi
+
 export LC_ALL=C
 
 SCRIPT_NAME="$(basename "$0")"
@@ -16,7 +25,7 @@ max_files=5
 team_name="Default"
 group_name="Default Group"
 
-print() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
+print() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
 err() { print "ERROR: $*" >&2; }
 
 usage() {
@@ -99,6 +108,7 @@ print "Starting zShield protect flow against ${base_url}"
 
 # Utility: login -> get access token
 login() {
+  # print "Entering login function"
   print "Authenticating..."
   local resp
   resp=$(curl -sS -X POST "$base_url/api/auth/v1/api_keys/login" \
@@ -110,16 +120,23 @@ login() {
     err "Login failed: $resp"; return 1;
   fi
   print "Authentication successful"
+  # print "Exiting login function"
   return 0
 }
 
 # Find matching files (glob)
 find_matching_files() {
-  shopt -s nullglob
+  # printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "Entering find_matching_files function" >&2
+  # Set nullglob option for compatibility with bash and zsh
+  if [[ -n "${BASH_VERSION:-}" ]]; then
+    shopt -s nullglob
+  elif [[ -n "${ZSH_VERSION:-}" ]]; then
+    setopt null_glob
+  fi
   # allow patterns with quotes/wildcards passed through
   local pattern="$1"
   # expand pattern
-  eval "files=( $pattern )"
+  files=($pattern)
   local count=${#files[@]}
   if (( count == 0 )); then
     err "No files found matching pattern: $pattern"
@@ -141,6 +158,7 @@ find_matching_files() {
     return 2
   fi
   printf '%s\n' "${valid_files[@]}"
+  # printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "Exiting find_matching_files function" >&2
 }
 
 # resolve team id by name
@@ -161,14 +179,19 @@ resolve_team_id() {
 
 # resolve group id by name with team scoping
 resolve_group_id() {
+  # print "Entering resolve_group_id function"
   local tname="$1"; shift
   local tid="$1"; shift
   print "Resolving group id for '$tname' (team id: $tid)..."
+  local read_flag='-a'
+  if [[ -n "${ZSH_VERSION:-}" ]]; then
+    read_flag='-A'
+  fi
   local resp
   resp=$(curl -sS -H "Authorization: Bearer $token" "$base_url/api/mtd-policy/public/v1/groups") || { err "Failed to list groups"; return 1; }
   # find matches
   local matches
-  IFS=$'\n' read -r -d '' -a matches < <(printf '%s' "$resp" | jq -c --arg NAME "$tname" '.[] | select(.name == $NAME)' && printf '\0')
+  IFS=$'\n' read -r -d '' "$read_flag" matches < <(printf '%s' "$resp" | jq -c --arg NAME "$tname" '.[] | select(.name == $NAME)' && printf '\0')
   if [[ ${#matches[@]} -eq 0 ]]; then
     err "Group '$tname' not found."
     return 2
@@ -186,7 +209,7 @@ resolve_group_id() {
   done
   # try global
   local global_matches
-  IFS=$'\n' read -r -d '' -a global_matches < <(printf '%s' "$resp" | jq -c --arg NAME "$tname" '.[] | select(.name == $NAME and (.team == null))' && printf '\0')
+  IFS=$'\n' read -r -d '' "$read_flag" global_matches < <(printf '%s' "$resp" | jq -c --arg NAME "$tname" '.[] | select(.name == $NAME and (.team == null))' && printf '\0')
   if [[ ${#global_matches[@]} -eq 1 ]]; then
     local gid
     gid=$(printf '%s' "${global_matches[0]}" | jq -r '.id')
@@ -199,6 +222,7 @@ resolve_group_id() {
 
 # build protection JSON
 build_protection_request() {
+  # print "Entering build_protection_request function"
   local teamId="$1"; local groupId="$2"
   if [[ -n "${protection_json_file:-}" ]]; then
     if [[ ! -f "$protection_json_file" ]]; then err "Protection JSON file not found: $protection_json_file"; return 2; fi
@@ -222,10 +246,12 @@ build_protection_request() {
   fi
   # inject teamId and groupId
   printf '%s' "$j" | jq --arg tid "$teamId" --arg gid "$groupId" '. + {teamId: $tid, groupId: $gid}'
+  # print "Exiting build_protection_request function"
 }
 
 # submit protection job
 submit_protect() {
+  # print "Entering submit_protect function"
   local file_path="$1"
   local req_json="$2"
   print "Submitting protection job for $file_path"
@@ -301,7 +327,11 @@ download_signed_url() {
   # download
   curl -sSL -f -o "$output_file" "$signed_url" || { err "Signed URL download failed"; return 2; }
   local size
-  size=$(stat -c%s "$output_file")
+  if [[ "$OSTYPE" == "darwin"* ]]; then
+    size=$(stat -f%z "$output_file")
+  else
+    size=$(stat -c%s "$output_file")
+  fi
   print "Download complete: $output_file ($size bytes)"
   # check magic PK
   local magic
@@ -350,8 +380,12 @@ else
   fi
 fi
 
+print "Resolving team id..."
 team_id=$(resolve_team_id) || exit 3
+print "Team id: $team_id"
+print "Resolving group id..."
 group_id=$(resolve_group_id "$group_name" "$team_id") || exit 3
+print "Group id: $group_id"
 
 protection_json=$(build_protection_request "$team_id" "$group_id") || exit 3
 

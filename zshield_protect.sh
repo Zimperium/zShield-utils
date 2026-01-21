@@ -111,7 +111,7 @@ login() {
   # print "Entering login function"
   print "Authenticating..."
   local resp
-  resp=$(curl -sS -X POST "$base_url/api/auth/v1/api_keys/login" \
+  resp=$(curl -sS -f -X POST "$base_url/api/auth/v1/api_keys/login" \
     -H 'Content-Type: application/json' \
     -d "{\"clientId\": \"$client_id\", \"secret\": \"$client_secret\"}") || {
     err "Authentication request failed"; return 1; }
@@ -164,13 +164,29 @@ find_matching_files() {
 # resolve team id by name
 resolve_team_id() {
   print "Resolving team id for '$team_name'..."
-  local resp
-  resp=$(curl -sS -H "Authorization: Bearer $token" "$base_url/api/auth/public/v1/teams") || { err "Failed to list teams"; return 1; }
-  # teams are in .content
+  local all_teams="[]"
+  local page=0
+  local size=100
+  while true; do
+    local resp
+    resp=$(curl -sS -f -H "Authorization: Bearer $token" "$base_url/api/auth/public/v1/teams?page=$page&size=$size") || { err "Failed to list teams page $page"; return 1; }
+    local content
+    content=$(printf '%s' "$resp" | jq '.content // []')
+    all_teams=$(printf '%s' "$all_teams" | jq --argjson new "$content" '. + $new')
+    local totalElements
+    totalElements=$(printf '%s' "$resp" | jq -r '.totalElements // 0')
+    local current_count
+    current_count=$(printf '%s' "$all_teams" | jq length)
+    if (( current_count >= totalElements || $(printf '%s' "$content" | jq length) < size )); then
+      break
+    fi
+    ((page++))
+  done
+  # teams are in all_teams
   local team_id
-  team_id=$(printf '%s' "$resp" | jq -r --arg NAME "$team_name" '.content[] | select(.name== $NAME) | .id' | head -n1 || true)
+  team_id=$(printf '%s' "$all_teams" | jq -r --arg NAME "$team_name" '.[] | select(.name== $NAME) | .id' | head -n1 || true)
   if [[ -z "$team_id" ]]; then
-    err "Team '$team_name' not found. Response: $resp"
+    err "Team '$team_name' not found."
     return 2
   fi
   print "Resolved team '$team_name' -> $team_id"
@@ -188,7 +204,7 @@ resolve_group_id() {
     read_flag='-A'
   fi
   local resp
-  resp=$(curl -sS -H "Authorization: Bearer $token" "$base_url/api/mtd-policy/public/v1/groups") || { err "Failed to list groups"; return 1; }
+  resp=$(curl -sS -f -H "Authorization: Bearer $token" "$base_url/api/mtd-policy/public/v1/groups") || { err "Failed to list groups"; return 1; }
   # find matches
   local matches
   IFS=$'\n' read -r -d '' "$read_flag" matches < <(printf '%s' "$resp" | jq -c --arg NAME "$tname" '.[] | select(.name == $NAME)' && printf '\0')
@@ -257,7 +273,7 @@ submit_protect() {
   print "Submitting protection job for $file_path"
   # Use curl form upload
   local resp
-  resp=$(curl -sS -X POST -H "Authorization: Bearer $token" \
+  resp=$(curl -sS -f -X POST -H "Authorization: Bearer $token" \
     -F "file=@${file_path}" \
     -F "appProtectionRequest=${req_json};type=application/json" \
     "$base_url/api/zapp/public/v1/builds/protect") || { err "Submit protect request failed"; return 1; }
@@ -273,7 +289,7 @@ submit_protect() {
 # get build status
 get_build() {
   local id="$1"
-  curl -sS -H "Authorization: Bearer $token" "$base_url/api/zapp/public/v1/builds/$id"
+  curl -sS -f -H "Authorization: Bearer $token" "$base_url/api/zapp/public/v1/builds/$id"
 }
 
 # poll until ready
@@ -310,7 +326,7 @@ poll_until_ready() {
 get_protected_link() {
   local id="$1"
   local resp
-  resp=$(curl -sS -H "Authorization: Bearer $token" -H 'Accept: application/json' "$base_url/api/zapp/public/v1/builds/$id/protected") || { err "Failed to /protected"; return 1; }
+  resp=$(curl -sS -f -H "Authorization: Bearer $token" -H 'Accept: application/json' "$base_url/api/zapp/public/v1/builds/$id/protected") || { err "Failed to /protected"; return 1; }
   local url
   url=$(printf '%s' "$resp" | jq -r '.url // empty')
   if [[ -z "$url" ]]; then err "Unexpected /protected response: $resp"; return 2; fi

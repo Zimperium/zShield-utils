@@ -29,7 +29,7 @@ A bash script to upload mobile app files (APK, AAB, XCARCHIVE compressed as a ZI
 - `--group-name NAME`           : Group name for zDefend protection (default: "Default Group")
 - `--protection-json-file FILE` : Path to custom protection JSON file (optional)
 - `--protection-json JSON`      : Inline protection JSON (optional)
-- `--output-file FILE`          : Output filename or directory (optional)
+- `--output-file FILE`          : Output filename or directory for downloaded artifacts (optional)
 - `--timeout-minutes N`         : Wait timeout in minutes (default: 60)
 - `--poll-interval-seconds N`   : Poll interval in seconds (default: 30)
 - `-h, --help`                  : Show help
@@ -49,6 +49,40 @@ The script accepts the following file types:
 - `.apk` - Android application packages
 - `.aab` - Android app bundles
 - `.zip` - ZIP files containing a `.xcarchive` (for iOS/macOS apps)
+
+### Output File Handling
+
+The script handles output files based on the `--output-file` parameter and the number of input files:
+
+#### Single File Processing
+
+- **With `--output-file` as filename**: Uses the specified filename directly
+- **With `--output-file` as directory**: Creates `{original_basename}_zshield_protected.{original_extension}` in the directory
+- **Without `--output-file`**: Creates `{original_basename}_zshield_protected.{original_extension}` in current directory
+
+#### Multiple File Processing
+
+- **`--output-file` must be a directory**: Creates `{original_basename}_zshield_protected.{original_extension}` for each file in the directory
+- **Without `--output-file`**: Creates files in current directory with the naming pattern above
+
+#### Sample input and output
+
+```bash
+# Single file, custom output name
+./zshield_protect.sh --app-file "app.apk" --output-file "my_protected.apk"
+
+# Single file, directory output
+./zshield_protect.sh --app-file "app.apk" --output-file "./protected/"
+# Result: ./protected/app_zshield_protected.apk
+
+# Multiple files, directory output
+./zshield_protect.sh --app-file "*.apk" --output-file "./protected/"
+# Result: ./protected/app1_zshield_protected.apk, ./protected/app2_zshield_protected.apk
+
+# Multiple files, current directory (default)
+./zshield_protect.sh --app-file "*.apk"
+# Result: ./app1_zshield_protected.apk, ./app2_zshield_protected.apk
+```
 
 ### Examples
 

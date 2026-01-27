@@ -415,24 +415,30 @@ done < <(find_matching_files "$app_file_pattern") || exit 3
 print "Matched input files: ${files[*]}"
 
 # Determine output handling
-if (( ${#files[@]} == 1 )); then
-  if [[ -n "${output_file_input:-}" ]]; then
-    output_file="$output_file_input"
+if [[ -n "${output_file_input:-}" ]]; then
+  if [[ -d "$output_file_input" || "$output_file_input" =~ /$ ]]; then
+    # output_file_input is a directory
+    output_dir="${output_file_input%/}"
+    use_directory=true
   else
-    baseName=$(basename "${files[0]}" | sed 's/\.[^.]*$//')
-    ext=$(basename "${files[0]}" | sed 's/.*\.//')
-    output_file="${baseName}_zshield_protected.${ext}"
-  fi
-else
-  if [[ -n "${output_file_input:-}" ]]; then
-    if [[ -d "$output_file_input" || "$output_file_input" =~ /$ ]]; then
-      output_dir="${output_file_input%/}"
-    else
+    # output_file_input is a filename
+    if (( ${#files[@]} > 1 )); then
       err "--output-file must be a directory when processing multiple files"
       exit 2
     fi
+    output_file="$output_file_input"
+    use_directory=false
+  fi
+else
+  # No output_file_input provided
+  if (( ${#files[@]} == 1 )); then
+    baseName=$(basename "${files[0]}" | sed 's/\.[^.]*$//')
+    ext=$(basename "${files[0]}" | sed 's/.*\.//')
+    output_file="${baseName}_zshield_protected.${ext}"
+    use_directory=false
   else
     output_dir="."
+    use_directory=true
   fi
 fi
 
@@ -449,7 +455,7 @@ protection_json=$(build_protection_request "$team_id" "$group_id") || exit 3
 for file_path in "${files[@]}"; do
   print "Processing file: $file_path"
 
-  if (( ${#files[@]} > 1 )); then
+  if [[ "$use_directory" == "true" ]]; then
     baseName=$(basename "$file_path" | sed 's/\.[^.]*$//')
     ext=$(basename "$file_path" | sed 's/.*\.//')
     output_file="${output_dir}/${baseName}_zshield_protected.${ext}"

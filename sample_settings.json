@@ -1,0 +1,10 @@
+{
+      "description":"Sample Application for Testing",
+      "signatureVerification":false,
+      "staticDexEncryption":true,
+      "resourceEncryption":false,
+      "metadataEncryption":true,
+      "codeObfuscation":true,
+      "runtimeProtection":true,
+      "autoScanBuild":true
+}

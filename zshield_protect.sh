@@ -28,6 +28,10 @@ group_name="Default Group"
 print() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
 err() { print "ERROR: $*" >&2; }
 
+# Function: usage
+# Description: Display help information and usage instructions
+# Inputs: None
+# Outputs: Prints usage text to stderr, exits with code 0
 usage() {
   cat <<EOF
 Usage: $SCRIPT_NAME [options]
@@ -36,12 +40,12 @@ Options:
   --console-url URL           zShield console url (required or env console_url)
   --client-id ID              API client id (required or env client_id)
   --client-secret SECRET      API client secret (required or env client_secret)
-  --app-file PATTERN          Glob pattern matching input files (required, max $max_files, extensions: .apk, .aab, .xcarchive)
+  --app-file PATTERN          Glob pattern matching input files (required, max $max_files, extensions: .apk, .aab, .zip)
   --team-name NAME            Team name (default: $team_name)
   --group-name NAME           Group name (default: $group_name)
   --protection-json-file FILE Protection JSON file (optional)
   --protection-json JSON      Protection JSON inline (optional)
-  --output-file FILE          Output filename for downloaded artifact (optional)
+  --output-file FILE          Output filename or folder for downloaded artifact (optional)
   --timeout-minutes N         Wait timeout in minutes (default: $timeout_minutes)
   --poll-interval-seconds N   Poll interval seconds (default: $poll_interval_seconds)
   -h, --help                  Show this help
@@ -106,7 +110,10 @@ base_url="${console_url%/}"
 
 print "Starting zShield protect flow against ${base_url}"
 
-# Utility: login -> get access token
+# Function: login
+# Description: Authenticate with zShield API and obtain access token
+# Inputs: None (uses global client_id, client_secret, base_url)
+# Outputs: Sets global token variable, returns 0 on success, 1 on failure
 login() {
   # print "Entering login function"
   print "Authenticating..."
@@ -124,7 +131,10 @@ login() {
   return 0
 }
 
-# Find matching files (glob)
+# Function: find_matching_files
+# Description: Find files matching a glob pattern, filter by valid extensions, and validate count
+# Inputs: $1 - glob pattern string
+# Outputs: Prints newline-separated list of valid files to stdout, returns 2 on error
 find_matching_files() {
   # printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "Entering find_matching_files function" >&2
   # Set nullglob option for compatibility with bash and zsh
@@ -149,19 +159,22 @@ find_matching_files() {
   # Filter files by extension
   local valid_files=()
   for f in "${files[@]}"; do
-    if [[ "$f" =~ \.(apk|aab|xcarchive)$ ]]; then
+    if [[ "$f" =~ \.(apk|aab|zip)$ ]]; then
       valid_files+=("$f")
     fi
   done
   if (( ${#valid_files[@]} == 0 )); then
-    err "No valid files found. Files must have .apk, .aab, or .xcarchive extensions. Matched: ${files[*]}"
+    err "No valid files found. Files must have .apk, .aab, or .zip extensions. Matched: ${files[*]}"
     return 2
   fi
-  printf '%s\n' "${valid_files[@]}"
+  printf '%s\0' "${valid_files[@]}"
   # printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "Exiting find_matching_files function" >&2
 }
 
-# resolve team id by name
+# Function: resolve_team_id
+# Description: Resolve team name to team ID by querying the teams API with pagination
+# Inputs: None (uses global team_name, token, base_url)
+# Outputs: Prints team ID to stdout, returns 2 on error
 resolve_team_id() {
   print "Resolving team id for '$team_name'..."
   local all_teams="[]"
@@ -193,7 +206,10 @@ resolve_team_id() {
   echo "$team_id"
 }
 
-# resolve group id by name with team scoping
+# Function: resolve_group_id
+# Description: Resolve group name to group ID with team scoping preference
+# Inputs: $1 - group name, $2 - team ID
+# Outputs: Prints group ID to stdout, returns 2 on error
 resolve_group_id() {
   # print "Entering resolve_group_id function"
   local tname="$1"; shift
@@ -236,7 +252,10 @@ resolve_group_id() {
   return 2
 }
 
-# build protection JSON
+# Function: build_protection_request
+# Description: Build JSON payload for protection request with team/group injection
+# Inputs: $1 - team ID, $2 - group ID
+# Outputs: Prints JSON string to stdout, returns 2 on error
 build_protection_request() {
   # print "Entering build_protection_request function"
   local teamId="$1"; local groupId="$2"
@@ -248,12 +267,12 @@ build_protection_request() {
     local j
     j="$protection_json_inline"
   else
-    # default as in JS
+    # default as in zShieldPro GitHub Action
     j='{
       "description":"CI zShield Pro protection",
       "signatureVerification":false,
       "staticDexEncryption":true,
-      "resourceEncryption":true,
+      "resourceEncryption":false,
       "metadataEncryption":true,
       "codeObfuscation":false,
       "runtimeProtection":true,
@@ -265,18 +284,23 @@ build_protection_request() {
   # print "Exiting build_protection_request function"
 }
 
-# submit protection job
+# Function: submit_protect
+# Description: Submit file and protection config to zShield for processing
+# Inputs: $1 - file path, $2 - protection JSON string
+# Outputs: Prints build ID to stdout, returns 1 on API error, 2 on response error
 submit_protect() {
   # print "Entering submit_protect function"
   local file_path="$1"
   local req_json="$2"
   print "Submitting protection job for $file_path"
   # Use curl form upload
+  local form_file
+  form_file="file=@\"$file_path\""
   local resp
   resp=$(curl -sS -f -X POST -H "Authorization: Bearer $token" \
-    -F "file=@${file_path}" \
+    -F "$form_file" \
     -F "appProtectionRequest=${req_json};type=application/json" \
-    "$base_url/api/zapp/public/v1/builds/protect") || { err "Submit protect request failed"; return 1; }
+    "$base_url/api/zapp/public/v1/builds/protect" 2>&1) || { err "Submit protect request failed: $resp"; return 1; }
   local buildId
   buildId=$(printf '%s' "$resp" | jq -r '.buildId // empty' || true)
   if [[ -z "$buildId" ]]; then
@@ -286,13 +310,19 @@ submit_protect() {
   echo "$buildId"
 }
 
-# get build status
+# Function: get_build
+# Description: Fetch current status of a build from zShield API
+# Inputs: $1 - build ID
+# Outputs: Prints JSON response to stdout, returns 1 on API error
 get_build() {
   local id="$1"
   curl -sS -f -H "Authorization: Bearer $token" "$base_url/api/zapp/public/v1/builds/$id"
 }
 
-# poll until ready
+# Function: poll_until_ready
+# Description: Poll build status until protection is complete or timeout
+# Inputs: $1 - build ID
+# Outputs: Prints JSON response when ready to stdout, returns 1 on API error, 2 on timeout/failure
 poll_until_ready() {
   local id="$1"
   local start
@@ -302,7 +332,7 @@ poll_until_ready() {
     local now
     now=$(date +%s)
     if (( now - start > timeout )); then
-      err "Timed out waiting for protected artifact after ${timeout_minutes} minutes."; return 2; fi
+      err "Timed out waiting for protected artifact after ${timeout_minutes} minutes. Protected file will be available from the console."; return 2; fi
 
     local resp
     resp=$(get_build "$id") || { err "Failed to get build $id"; return 1; }
@@ -315,14 +345,17 @@ poll_until_ready() {
       printf '%s' "$resp"
       return 0
     fi
-    if [[ "$state" == "FAILED" || "$state" == "ERROR" ]]; then
+    if [[ "$state" == "FAILED" || "$state" == "ERRORED" ]]; then
       err "zShield build failed: $resp"; return 2;
     fi
     sleep "$poll_interval_seconds"
   done
 }
 
-# get protected signed URL
+# Function: get_protected_link
+# Description: Get signed download URL for the protected artifact
+# Inputs: $1 - build ID
+# Outputs: Prints JSON response with URL to stdout, returns 1 on API error, 2 on invalid response
 get_protected_link() {
   local id="$1"
   local resp
@@ -333,7 +366,10 @@ get_protected_link() {
   printf '%s' "$resp"
 }
 
-# download signed URL
+# Function: download_signed_url
+# Description: Download the protected artifact from signed URL and validate it
+# Inputs: $1 - signed URL, $2 - input file path, $3 - server name, $4 - output file path
+# Outputs: Prints output file path to stdout, returns 2 on download/validation error
 download_signed_url() {
   local signed_url="$1"
   local input_file="$2"
@@ -372,7 +408,10 @@ trap 'err "Script failed"' ERR
 if ! login; then exit 3; fi
 
 # find files
-files=($(find_matching_files "$app_file_pattern")) || exit 3
+files=()
+while IFS= read -r -d '' file; do
+  files+=("$file")
+done < <(find_matching_files "$app_file_pattern") || exit 3
 print "Matched input files: ${files[*]}"
 
 # Determine output handling
@@ -381,7 +420,8 @@ if (( ${#files[@]} == 1 )); then
     output_file="$output_file_input"
   else
     baseName=$(basename "${files[0]}" | sed 's/\.[^.]*$//')
-    output_file="${baseName}_zshield_protected.apk"
+    ext=$(basename "${files[0]}" | sed 's/.*\.//')
+    output_file="${baseName}_zshield_protected.${ext}"
   fi
 else
   if [[ -n "${output_file_input:-}" ]]; then
@@ -411,7 +451,8 @@ for file_path in "${files[@]}"; do
 
   if (( ${#files[@]} > 1 )); then
     baseName=$(basename "$file_path" | sed 's/\.[^.]*$//')
-    output_file="${output_dir}/${baseName}_zshield_protected.apk"
+    ext=$(basename "$file_path" | sed 's/.*\.//')
+    output_file="${output_dir}/${baseName}_zshield_protected.${ext}"
   fi
 
   build_id=$(submit_protect "$file_path" "$protection_json") || exit 3

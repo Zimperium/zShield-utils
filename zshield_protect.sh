@@ -24,6 +24,8 @@ poll_interval_seconds=30
 max_files=5
 team_name="Default"
 group_name="Default Group"
+curl_retry_count=3
+curl_retry_max_time=120
 
 print() { printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
 err() { print "ERROR: $*" >&2; }
@@ -118,7 +120,7 @@ login() {
   # print "Entering login function"
   print "Authenticating..."
   local resp
-  resp=$(curl -sS -f -X POST "$base_url/api/auth/v1/api_keys/login" \
+  resp=$(curl -sS -f --retry $curl_retry_count --retry-max-time $curl_retry_max_time -X POST "$base_url/api/auth/v1/api_keys/login" \
     -H 'Content-Type: application/json' \
     -d "{\"clientId\": \"$client_id\", \"secret\": \"$client_secret\"}") || {
     err "Authentication request failed"; return 1; }
@@ -182,7 +184,7 @@ resolve_team_id() {
   local size=100
   while true; do
     local resp
-    resp=$(curl -sS -f -H "Authorization: Bearer $token" "$base_url/api/auth/public/v1/teams?page=$page&size=$size") || { err "Failed to list teams page $page"; return 1; }
+    resp=$(curl -sS -f --retry $curl_retry_count --retry-max-time $curl_retry_max_time -H "Authorization: Bearer $token" "$base_url/api/auth/public/v1/teams?page=$page&size=$size") || { err "Failed to list teams page $page"; return 1; }
     local content
     content=$(printf '%s' "$resp" | jq '.content // []')
     all_teams=$(printf '%s' "$all_teams" | jq --argjson new "$content" '. + $new')
@@ -220,7 +222,7 @@ resolve_group_id() {
     read_flag='-A'
   fi
   local resp
-  resp=$(curl -sS -f -H "Authorization: Bearer $token" "$base_url/api/mtd-policy/public/v1/groups") || { err "Failed to list groups"; return 1; }
+  resp=$(curl -sS -f --retry $curl_retry_count --retry-max-time $curl_retry_max_time -H "Authorization: Bearer $token" "$base_url/api/mtd-policy/public/v1/groups") || { err "Failed to list groups"; return 1; }
   # find matches
   local matches
   IFS=$'\n' read -r -d '' "$read_flag" matches < <(printf '%s' "$resp" | jq -c --arg NAME "$tname" '.[] | select(.name == $NAME)' && printf '\0')
@@ -267,13 +269,13 @@ build_protection_request() {
     local j
     j="$protection_json_inline"
   else
-    # default as in zShieldPro GitHub Action
+    # default protection config
     j='{
       "description":"CI zShield Pro protection",
       "signatureVerification":false,
-      "staticDexEncryption":true,
+      "staticDexEncryption":false,
       "resourceEncryption":false,
-      "metadataEncryption":true,
+      "metadataEncryption":false,
       "codeObfuscation":false,
       "runtimeProtection":true,
       "autoScanBuild":true
@@ -293,11 +295,11 @@ submit_protect() {
   local file_path="$1"
   local req_json="$2"
   print "Submitting protection job for $file_path"
-  # Use curl form upload
+  # Use curl form upload with proper content type for JSON
   local form_file
   form_file="file=@\"$file_path\""
   local resp
-  resp=$(curl -sS -f -X POST -H "Authorization: Bearer $token" \
+  resp=$(curl -sS -f --retry $curl_retry_count --retry-max-time $curl_retry_max_time -X POST -H "Authorization: Bearer $token" \
     -F "$form_file" \
     -F "appProtectionRequest=${req_json};type=application/json" \
     "$base_url/api/zapp/public/v1/builds/protect" 2>&1) || { err "Submit protect request failed: $resp"; return 1; }
@@ -316,7 +318,7 @@ submit_protect() {
 # Outputs: Prints JSON response to stdout, returns 1 on API error
 get_build() {
   local id="$1"
-  curl -sS -f -H "Authorization: Bearer $token" "$base_url/api/zapp/public/v1/builds/$id"
+  curl -sS -f --retry $curl_retry_count --retry-max-time $curl_retry_max_time -H "Authorization: Bearer $token" "$base_url/api/zapp/public/v1/builds/$id"
 }
 
 # Function: poll_until_ready
@@ -359,25 +361,25 @@ poll_until_ready() {
 get_protected_link() {
   local id="$1"
   local resp
-  resp=$(curl -sS -f -H "Authorization: Bearer $token" -H 'Accept: application/json' "$base_url/api/zapp/public/v1/builds/$id/protected") || { err "Failed to /protected"; return 1; }
+  resp=$(curl -sS -f --retry $curl_retry_count --retry-max-time $curl_retry_max_time -H "Authorization: Bearer $token" -H 'Accept: application/json' "$base_url/api/zapp/public/v1/builds/$id/protected") || { err "Failed to /protected"; return 1; }
   local url
   url=$(printf '%s' "$resp" | jq -r '.url // empty')
   if [[ -z "$url" ]]; then err "Unexpected /protected response: $resp"; return 2; fi
   printf '%s' "$resp"
 }
 
-# Function: download_signed_url
+# Function: download_from_url
 # Description: Download the protected artifact from signed URL and validate it
 # Inputs: $1 - signed URL, $2 - input file path, $3 - server name, $4 - output file path
 # Outputs: Prints output file path to stdout, returns 2 on download/validation error
-download_signed_url() {
+download_from_url() {
   local signed_url="$1"
   local input_file="$2"
   local server_name="$3"
   local output_file="$4"
   print "Downloading protected artifact to $output_file"
   # download
-  curl -sSL -f -o "$output_file" "$signed_url" || { err "Signed URL download failed"; return 2; }
+  curl -sSL -f --retry $curl_retry_count --retry-max-time $curl_retry_max_time -o "$output_file" "$signed_url" || { err "Signed URL download failed"; return 2; }
   local size
   if [[ "$OSTYPE" == "darwin"* ]]; then
     size=$(stat -f%z "$output_file")
@@ -474,7 +476,7 @@ for file_path in "${files[@]}"; do
   print "Protected artifact name: ${protected_name:-<unknown>}"
   print "Protected artifact signed URL: ${protected_url:0:80}..."
 
-  downloaded_path=$(download_signed_url "$protected_url" "$file_path" "$protected_name" "$output_file") || exit 3
+  downloaded_path=$(download_from_url "$protected_url" "$file_path" "$protected_name" "$output_file") || exit 3
 
   print "Finished processing $file_path. Protected file: $downloaded_path"
 

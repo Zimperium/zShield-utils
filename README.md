@@ -140,13 +140,15 @@ By default, the script uses a standard protection configuration. You can customi
 
 #### Default protection settings
 
+Please note, that since some settings are only available on certain platofrms (iOS, Android, or Hybrid), the default protection settings are conservative in order to be compatible with all platforms. For more information on which features are supported on which platform, please refer to the documentation available through the console. 
+
 ```json
 {
   "description": "CI zShield Pro protection",
   "signatureVerification": false,
-  "staticDexEncryption": true,
+  "staticDexEncryption": false,
   "resourceEncryption": false,
-  "metadataEncryption": true,
+  "metadataEncryption": false,
   "codeObfuscation": false,
   "runtimeProtection": true,
   "autoScanBuild": true

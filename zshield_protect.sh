@@ -55,6 +55,11 @@ Options:
 
 Environment fallback names: console_url, client_id, client_secret
 
+Parameter quoting recommendations:
+  Enclose --app-file and --output-file in quotes to prevent shell expansion and handle paths with spaces:
+    --app-file "build/*.apk"
+    --output-file "/path/with spaces/dir/"
+
 Example:
   $SCRIPT_NAME --console-url https://ziap.zimperium.com --client-id abc --client-secret secret \
     --app-file "./build/*.apk" --team-name "My Team" --group-name "My Group" --output-file ./protected/

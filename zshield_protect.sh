@@ -47,12 +47,18 @@ Options:
   --group-name NAME           Group name (default: $group_name)
   --protection-json-file FILE Protection JSON file (optional)
   --protection-json JSON      Protection JSON inline (optional)
+  --certificate-file FILE     Signing certificate file (optional, DER format)
   --output-file FILE          Output filename or folder for downloaded artifact (optional)
   --timeout-minutes N         Wait timeout in minutes (default: $timeout_minutes)
   --poll-interval-seconds N   Poll interval seconds (default: $poll_interval_seconds)
   -h, --help                  Show this help
 
 Environment fallback names: console_url, client_id, client_secret
+
+Parameter quoting recommendations:
+  Enclose --app-file and --output-file in quotes to prevent shell expansion and handle paths with spaces:
+    --app-file "build/*.apk"
+    --output-file "/path/with spaces/dir/"
 
 Example:
   $SCRIPT_NAME --console-url https://ziap.zimperium.com --client-id abc --client-secret secret \
@@ -78,6 +84,7 @@ while [[ $# -gt 0 ]]; do
     --group-name) group_name="$2"; shift 2;;
     --protection-json-file) protection_json_file="$2"; shift 2;;
     --protection-json) protection_json_inline="$2"; shift 2;;
+    --certificate-file) certificate_file="$2"; shift 2;;
     --output-file) output_file_input="$2"; shift 2;;
     --timeout-minutes) timeout_minutes="$2"; shift 2;;
     --poll-interval-seconds) poll_interval_seconds="$2"; shift 2;;
@@ -102,6 +109,7 @@ fi
 # Tools
 command -v curl >/dev/null 2>&1 || { err "curl is required"; exit 2; }
 command -v jq >/dev/null 2>&1 || { err "jq is required. Install jq and retry."; exit 2; }
+command -v xxd >/dev/null 2>&1 || { err "xxd is required. Install vim-common (or xxd) and retry."; exit 2; }
 
 # Normalize URL
 if ! [[ "$console_url" =~ ^https?:// ]]; then
@@ -288,21 +296,32 @@ build_protection_request() {
 
 # Function: submit_protect
 # Description: Submit file and protection config to zShield for processing
-# Inputs: $1 - file path, $2 - protection JSON string
+# Inputs: $1 - file path, $2 - protection JSON string, $3 - optional certificate file path (DER format)
 # Outputs: Prints build ID to stdout, returns 1 on API error, 2 on response error
 submit_protect() {
   # print "Entering submit_protect function"
   local file_path="$1"
   local req_json="$2"
+  local cert_file="${3:-}"
   print "Submitting protection job for $file_path"
   # Use curl form upload with proper content type for JSON
   local form_file
   form_file="file=@\"$file_path\""
   local resp
-  resp=$(curl -sS -f --retry $curl_retry_count --retry-max-time $curl_retry_max_time -X POST -H "Authorization: Bearer $token" \
-    -F "$form_file" \
-    -F "appProtectionRequest=${req_json};type=application/json" \
-    "$base_url/api/zapp/public/v1/builds/protect" 2>&1) || { err "Submit protect request failed: $resp"; return 1; }
+  if [[ -n "$cert_file" ]]; then
+    if [[ ! -f "$cert_file" ]]; then err "Certificate file not found: $cert_file"; return 2; fi
+    if [[ ! "$cert_file" =~ \.der$ ]]; then err "Certificate file must be in DER format (.der extension): $cert_file"; return 2; fi
+    resp=$(curl -sS -f --retry $curl_retry_count --retry-max-time $curl_retry_max_time -X POST -H "Authorization: Bearer $token" \
+      -F "$form_file" \
+      -F "appProtectionRequest=${req_json};type=application/json" \
+      -F "certificateFile=@\"$cert_file\";type=application/x-x509-ca-cert" \
+      "$base_url/api/zapp/public/v1/builds/protect" 2>&1) || { err "Submit protect request failed: $resp"; return 1; }
+  else
+    resp=$(curl -sS -f --retry $curl_retry_count --retry-max-time $curl_retry_max_time -X POST -H "Authorization: Bearer $token" \
+      -F "$form_file" \
+      -F "appProtectionRequest=${req_json};type=application/json" \
+      "$base_url/api/zapp/public/v1/builds/protect" 2>&1) || { err "Submit protect request failed: $resp"; return 1; }
+  fi
   local buildId
   buildId=$(printf '%s' "$resp" | jq -r '.buildId // empty' || true)
   if [[ -z "$buildId" ]]; then
@@ -417,6 +436,8 @@ done < <(find_matching_files "$app_file_pattern") || exit 3
 print "Matched input files: ${files[*]}"
 
 # Determine output handling
+# Track whether an exact filename was provided (for later decision on including build ID)
+exact_filename_provided=false
 if [[ -n "${output_file_input:-}" ]]; then
   if [[ -d "$output_file_input" || "$output_file_input" =~ /$ ]]; then
     # output_file_input is a directory
@@ -430,6 +451,7 @@ if [[ -n "${output_file_input:-}" ]]; then
     fi
     output_file="$output_file_input"
     use_directory=false
+    exact_filename_provided=true
   fi
 else
   # No output_file_input provided
@@ -463,7 +485,18 @@ for file_path in "${files[@]}"; do
     output_file="${output_dir}/${baseName}_zshield_protected.${ext}"
   fi
 
-  build_id=$(submit_protect "$file_path" "$protection_json") || exit 3
+  build_id=$(submit_protect "$file_path" "$protection_json" "${certificate_file:-}") || exit 3
+
+  # Update output_file to include build ID, unless exact filename was provided
+  if [[ "$exact_filename_provided" != "true" ]]; then
+    # Extract directory and filename
+    output_dir_part=$(dirname "$output_file")
+    output_name=$(basename "$output_file")
+    # Insert build ID before extension
+    baseName=$(printf '%s' "$output_name" | sed 's/\.[^.]*$//')
+    ext=$(printf '%s' "$output_name" | sed 's/.*\.//')
+    output_file="${output_dir_part}/${baseName}_${build_id}.${ext}"
+  fi
   print "Build id: $build_id"
 
   poll_resp=$(poll_until_ready "$build_id") || exit 3
@@ -476,14 +509,18 @@ for file_path in "${files[@]}"; do
   print "Protected artifact name: ${protected_name:-<unknown>}"
   print "Protected artifact signed URL: ${protected_url:0:80}..."
 
+  # Ensure output directory exists
+  output_dir_path=$(dirname "$output_file")
+  mkdir -p "$output_dir_path" || { err "Failed to create output directory: $output_dir_path"; exit 3; }
+
   downloaded_path=$(download_from_url "$protected_url" "$file_path" "$protected_name" "$output_file") || exit 3
 
   print "Finished processing $file_path. Protected file: $downloaded_path"
 
   # Outputs: print as KEY=VALUE lines for CI to capture
-  echo "BUILD_ID=$build_id"
-  echo "PROTECTED_URL=$protected_url"
-  echo "PROTECTED_FILE=$downloaded_path"
+  printf 'BUILD_ID=%s\n' "$build_id"
+  printf 'PROTECTED_URL=%s\n' "$protected_url"
+  printf 'PROTECTED_FILE=%s\n' "$downloaded_path"
 done
 
 exit 0

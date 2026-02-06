@@ -10,6 +10,7 @@ A bash script to upload mobile app files (APK, AAB, XCARCHIVE compressed as a ZI
 
 - `curl` (for API calls)
 - `jq` (for JSON processing)
+- `xxd` (for file validation; included in `vim-common` package on Linux)
 - bash or zsh environment
 - A valid zShield Pro account with API credentials
 
@@ -29,10 +30,15 @@ A bash script to upload mobile app files (APK, AAB, XCARCHIVE compressed as a ZI
 - `--group-name NAME`           : Group name for zDefend protection (default: "Default Group")
 - `--protection-json-file FILE` : Path to custom protection JSON file (optional)
 - `--protection-json JSON`      : Inline protection JSON (optional)
+- `--certificate-file FILE`     : Path to signing certificate file (optional, DER format)
 - `--output-file FILE`          : Output filename or directory for downloaded artifacts (optional)
 - `--timeout-minutes N`         : Wait timeout in minutes (default: 60)
 - `--poll-interval-seconds N`   : Poll interval in seconds (default: 30)
 - `-h, --help`                  : Show help
+
+**Parameter quoting:** It is recommended to enclose `--app-file` and `--output-file` parameters in quotes to prevent shell expansion and handle paths with spaces:
+- `--app-file "build/*.apk"` ensures glob patterns are passed literally to the script
+- `--output-file "/path/with spaces/dir/"` handles paths containing spaces
 
 ### Environment Variables
 
@@ -56,32 +62,39 @@ The script handles output files based on the `--output-file` parameter and the n
 
 #### Single File Processing
 
-- **With `--output-file` as filename**: Uses the specified filename directly
-- **With `--output-file` as directory**: Creates `{original_basename}_zshield_protected.{original_extension}` in the directory
-- **Without `--output-file`**: Creates `{original_basename}_zshield_protected.{original_extension}` in current directory
+- **With `--output-file` as exact filename**: Uses the specified filename directly (no build ID added). **Note:** If the file already exists, it will be overwritten.
+- **With `--output-file` as directory**: Creates `{original_basename}_zshield_protected_{build_id}.{original_extension}` in the directory
+- **Without `--output-file`**: Creates `{original_basename}_zshield_protected_{build_id}.{original_extension}` in current directory
 
 #### Multiple File Processing
 
-- **`--output-file` must be a directory**: Creates `{original_basename}_zshield_protected.{original_extension}` for each file in the directory
+- **`--output-file` must be a directory**: Creates `{original_basename}_zshield_protected_{build_id}.{original_extension}` for each file in the directory
 - **Without `--output-file`**: Creates files in current directory with the naming pattern above
+
+The build ID is automatically included in the filename to prevent accidental overwriting of existing protected artifacts. If you want to use a specific filename without the build ID, provide the exact filename with `--output-file`.
 
 #### Sample input and output
 
 ```bash
-# Single file, custom output name
+# Single file, custom output name (exact filename, no build ID added)
 ./zshield_protect.sh --app-file "app.apk" --output-file "my_protected.apk"
+# Result: my_protected.apk (will overwrite if exists)
 
-# Single file, directory output
+# Single file, directory output (build ID included in filename)
 ./zshield_protect.sh --app-file "app.apk" --output-file "./protected/"
-# Result: ./protected/app_zshield_protected.apk
+# Result: ./protected/app_zshield_protected_0b88138f-a484-49e0-91f5-114a71e4e805.apk
 
-# Multiple files, directory output
+# Multiple files, directory output (build ID included for each)
 ./zshield_protect.sh --app-file "*.apk" --output-file "./protected/"
-# Result: ./protected/app1_zshield_protected.apk, ./protected/app2_zshield_protected.apk
+# Result: ./protected/app1_zshield_protected_0b88138f-....apk, ./protected/app2_zshield_protected_1c99249g-....apk
 
-# Multiple files, current directory (default)
+# Single file, no output specified (build ID included in filename)
+./zshield_protect.sh --app-file "app.apk"
+# Result: ./app_zshield_protected_0b88138f-a484-49e0-91f5-114a71e4e805.apk
+
+# Multiple files, current directory (default, build ID included for each)
 ./zshield_protect.sh --app-file "*.apk"
-# Result: ./app1_zshield_protected.apk, ./app2_zshield_protected.apk
+# Result: ./app1_zshield_protected_0b88138f-....apk, ./app2_zshield_protected_1c99249g-....apk
 ```
 
 ### Examples
@@ -123,6 +136,23 @@ export CLIENT_SECRET="your-client-secret"
 ### Protection Configuration
 
 By default, the script uses a standard protection configuration. You can customize it by providing a JSON file or inline JSON. For more details, please see the API reference available through the console.
+
+#### Signing Certificate
+
+An optional signing certificate in DER format can be provided using the `--certificate-file` parameter. The certificate will be submitted with each binary matching the input pattern. If the same certificate should not be used for all binaries, ensure that your input pattern matches only one binary at a time.
+
+Example with certificate:
+```bash
+./zshield_protect.sh \
+  --console-url "https://ziap.zimperium.com" \
+  --client-id "your-client-id" \
+  --client-secret "your-client-secret" \
+  --app-file "app.apk" \
+  --certificate-file "path/to/cert.der" \
+  --output-file "./protected/"
+```
+
+**Note:** When processing multiple binaries with a glob pattern, the same certificate file will be submitted for each match. To use different certificates for different binaries, run the script separately for each binary or use specific patterns that match one file at a time.
 
 #### Protection settings
 
@@ -194,6 +224,12 @@ The script will exit with different codes:
 ### Compatibility
 
 The script is compatible with both Bash and Zsh shells.
+
+**Note on Alpine Linux and other non-GNU distros:** The script uses bash/zsh specific features (e.g., `[[ ]]` syntax) and GNU tool variants. Alpine Linux ships with busybox and `sh` by default. To use this script on Alpine, you must explicitly install `bash`:
+```bash
+apk add bash curl jq vim-common
+```
+The script has not been extensively tested on other non-GNU Linux distributions (e.g., BSD variants). Compatibility issues with `sed` or `stat` variants are possible.
 
 ### Troubleshooting
 

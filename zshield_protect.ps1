@@ -102,13 +102,6 @@ if (-not $ConsoleUrl -or -not $ClientId -or -not $ClientSecret -or -not $AppFile
     exit 2
 }
 
-# Check required tools
-$curl_path = Get-Command curl -ErrorAction SilentlyContinue
-if (-not $curl_path) {
-    Err "curl is required"
-    exit 2
-}
-
 # Normalize and validate URL
 if ($ConsoleUrl -notmatch '^https?://') {
     Err "console_url must include scheme (https://...). Got: $ConsoleUrl"

@@ -238,3 +238,113 @@ The script has not been extensively tested on other non-GNU Linux distributions 
 - Check file patterns match existing files
 - For large files, increase `--timeout-minutes` if needed
 - The script supports pagination for teams (if many exist)
+## zshield_protect.ps1
+
+A PowerShell script providing equivalent functionality to the bash version for uploading mobile app files to zShield Pro for protection, polling until processing is complete, and downloading the protected artifacts.
+
+### Prerequisites
+
+- PowerShell 7 or higher
+- A valid zShield Pro account with API credentials
+
+### Usage
+
+```powershell
+./zshield_protect.ps1 [options]
+```
+
+### Options
+
+- `-ConsoleUrl <URL>`               : zShield console URL (required)
+- `-ClientId <ID>`                  : API client ID (required)
+- `-ClientSecret <SECRET>`          : API client secret (required)
+- `-AppFile <PATTERN>`              : Glob pattern for input files (required, max 5 files, extensions: .apk, .aab, .zip)
+- `-TeamName <NAME>`                : Team name (default: "Default")
+- `-GroupName <NAME>`               : Group name for zDefend protection (default: "Default Group")
+- `-ProtectionJsonFile <FILE>`      : Path to custom protection JSON file (optional)
+- `-ProtectionJson <JSON>`          : Inline protection JSON (optional)
+- `-CertificateFile <FILE>`         : Path to signing certificate file (optional, DER format)
+- `-OutputFile <FILE>`              : Output filename or directory for downloaded artifacts (optional)
+- `-TimeoutMinutes <N>`             : Wait timeout in minutes (default: 60)
+- `-PollIntervalSeconds <N>`        : Poll interval in seconds (default: 30)
+- `-Help`                           : Show help
+
+### Environment Variables
+
+The same environment variables as the bash version are supported:
+
+- `console_url`
+- `client_id`
+- `client_secret`
+
+### Differences from Bash Version
+
+The PowerShell version has the following differences from the bash version:
+
+#### Parameter Syntax
+- Parameters use PowerShell syntax (e.g., `-ConsoleUrl` instead of `--console-url`)
+- Parameters do not require quoting for glob patterns; PowerShell handles expansion differently
+
+#### Network Retries
+Unlike Bash, which relies on built-in curl features to implement retries, PowerShell script implelements retry logic in code.
+
+- Built-in automatic retry logic with exponential backoff for all HTTP requests
+- Retry policy: 3 attempts with a maximum total time of 120 seconds
+- Retries are transparent and do not require additional configuration
+
+#### HttpClient for Multipart Requests
+- Uses `System.Net.Http.HttpClient` for file uploads instead of curl form submissions
+- Provides better control over multipart form data construction and response handling
+
+#### Output Directory Creation
+- Automatically creates output directories (including parent directories) if they don't exist using `New-Item -Force`
+
+### Behavior Parity with Bash Version
+
+Refer to the [Bash section](#zshield_protectsh) for details on these features, as they work identically in the PowerShell version:
+
+- **Supported File Formats**: Accepts .apk, .aab, and .zip files
+- **Output File Handling**: Same single/multiple file processing logic and naming conventions (see [Output File Handling](#output-file-handling))
+- **Protection Configuration**: Supports the same protection JSON configuration options (see [Protection Configuration](#protection-configuration))
+- **Signing Certificate**: Optional DER format certificate support works the same way
+- **Default Protection Settings**: Uses the same conservative defaults as the bash version
+- **Custom Protection**: Supports both file-based and inline JSON protection configurations
+- **Output**: Produces the same KEY=VALUE output format for CI/CD integration
+- **Error Handling**: Same exit codes (0 for success, 2 for validation errors, 3 for API errors)
+
+### Examples
+
+#### Basic usage with environment variables
+
+```powershell
+$env:console_url = "https://ziap.zimperium.com"
+$env:client_id = "your-client-id"
+$env:client_secret = "your-client-secret"
+
+./zshield_protect.ps1 -AppFile "build/*.apk" -TeamName "My Team" -GroupName "Production"
+```
+
+#### Using command-line parameters
+
+```powershell
+./zshield_protect.ps1 `
+  -ConsoleUrl "https://ziap.zimperium.com" `
+  -ClientId "your-client-id" `
+  -ClientSecret "your-client-secret" `
+  -AppFile "../build/*.aab" `
+  -TeamName "Development" `
+  -GroupName "Test Group" `
+  -OutputFile "./protected/"
+```
+
+#### Processing with signing certificate
+
+```powershell
+./zshield_protect.ps1 `
+  -ConsoleUrl "https://ziap.zimperium.com" `
+  -ClientId "your-client-id" `
+  -ClientSecret "your-client-secret" `
+  -AppFile "app.apk" `
+  -CertificateFile "path/to/cert.der" `
+  -OutputFile "./protected/"
+```

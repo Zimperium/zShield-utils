@@ -1,2 +1,5 @@
 # Visual Studio Code configuration files
 .vscode
+
+# Apple macOS system files
+.DS_Store

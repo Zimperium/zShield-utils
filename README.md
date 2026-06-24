@@ -2,7 +2,7 @@
 
 Various utilities to use with zShield Pro
 
-## zshield_protect.sh
+## zshieldpro_protect.sh
 
 A bash script to upload mobile app files (APK, AAB, XCARCHIVE compressed as a ZIP) to zShield Pro for protection, poll until processing is complete, and download the protected artifacts.
 
@@ -17,7 +17,7 @@ A bash script to upload mobile app files (APK, AAB, XCARCHIVE compressed as a ZI
 ### Usage
 
 ```bash
-./zshield_protect.sh [options]
+./zshieldpro_protect.sh [options]
 ```
 
 ### Options
@@ -63,12 +63,12 @@ The script handles output files based on the `--output-file` parameter and the n
 #### Single File Processing
 
 - **With `--output-file` as exact filename**: Uses the specified filename directly (no build ID added). **Note:** If the file already exists, it will be overwritten.
-- **With `--output-file` as directory**: Creates `{original_basename}_zshield_protected_{build_id}.{original_extension}` in the directory
-- **Without `--output-file`**: Creates `{original_basename}_zshield_protected_{build_id}.{original_extension}` in current directory
+- **With `--output-file` as directory**: Creates `{original_basename}_zshieldpro_protected_{build_id}.{original_extension}` in the directory
+- **Without `--output-file`**: Creates `{original_basename}_zshieldpro_protected_{build_id}.{original_extension}` in current directory
 
 #### Multiple File Processing
 
-- **`--output-file` must be a directory**: Creates `{original_basename}_zshield_protected_{build_id}.{original_extension}` for each file in the directory
+- **`--output-file` must be a directory**: Creates `{original_basename}_zshieldpro_protected_{build_id}.{original_extension}` for each file in the directory
 - **Without `--output-file`**: Creates files in current directory with the naming pattern above
 
 The build ID is automatically included in the filename to prevent accidental overwriting of existing protected artifacts. If you want to use a specific filename without the build ID, provide the exact filename with `--output-file`.
@@ -77,24 +77,24 @@ The build ID is automatically included in the filename to prevent accidental ove
 
 ```bash
 # Single file, custom output name (exact filename, no build ID added)
-./zshield_protect.sh --app-file "app.apk" --output-file "my_protected.apk"
+./zshieldpro_protect.sh --app-file "app.apk" --output-file "my_protected.apk"
 # Result: my_protected.apk (will overwrite if exists)
 
 # Single file, directory output (build ID included in filename)
-./zshield_protect.sh --app-file "app.apk" --output-file "./protected/"
-# Result: ./protected/app_zshield_protected_0b88138f-a484-49e0-91f5-114a71e4e805.apk
+./zshieldpro_protect.sh --app-file "app.apk" --output-file "./protected/"
+# Result: ./protected/app_zshieldpro_protected_0b88138f-a484-49e0-91f5-114a71e4e805.apk
 
 # Multiple files, directory output (build ID included for each)
-./zshield_protect.sh --app-file "*.apk" --output-file "./protected/"
-# Result: ./protected/app1_zshield_protected_0b88138f-....apk, ./protected/app2_zshield_protected_1c99249g-....apk
+./zshieldpro_protect.sh --app-file "*.apk" --output-file "./protected/"
+# Result: ./protected/app1_zshieldpro_protected_0b88138f-....apk, ./protected/app2_zshieldpro_protected_1c99249g-....apk
 
 # Single file, no output specified (build ID included in filename)
-./zshield_protect.sh --app-file "app.apk"
-# Result: ./app_zshield_protected_0b88138f-a484-49e0-91f5-114a71e4e805.apk
+./zshieldpro_protect.sh --app-file "app.apk"
+# Result: ./app_zshieldpro_protected_0b88138f-a484-49e0-91f5-114a71e4e805.apk
 
 # Multiple files, current directory (default, build ID included for each)
-./zshield_protect.sh --app-file "*.apk"
-# Result: ./app1_zshield_protected_0b88138f-....apk, ./app2_zshield_protected_1c99249g-....apk
+./zshieldpro_protect.sh --app-file "*.apk"
+# Result: ./app1_zshieldpro_protected_0b88138f-....apk, ./app2_zshieldpro_protected_1c99249g-....apk
 ```
 
 ### Examples
@@ -106,13 +106,13 @@ export CONSOLE_URL="https://ziap.zimperium.com"
 export CLIENT_ID="your-client-id"
 export CLIENT_SECRET="your-client-secret"
 
-./zshield_protect.sh --app-file "build/*.apk" --team-name "My Team" --group-name "Production"
+./zshieldpro_protect.sh --app-file "build/*.apk" --team-name "My Team" --group-name "Production"
 ```
 
 #### Using command-line options
 
 ```bash
-./zshield_protect.sh \
+./zshieldpro_protect.sh \
   --console-url "https://ziap.zimperium.com" \
   --client-id "your-client-id" \
   --client-secret "your-client-secret" \
@@ -125,7 +125,7 @@ export CLIENT_SECRET="your-client-secret"
 #### Processing multiple files
 
 ```bash
-./zshield_protect.sh \
+./zshieldpro_protect.sh \
   --console-url "https://ziap.zimperium.com" \
   --client-id "your-client-id" \
   --client-secret "your-client-secret" \
@@ -143,7 +143,7 @@ An optional signing certificate in DER format can be provided using the `--certi
 
 Example with certificate:
 ```bash
-./zshield_protect.sh \
+./zshieldpro_protect.sh \
   --console-url "https://ziap.zimperium.com" \
   --client-id "your-client-id" \
   --client-secret "your-client-secret" \
@@ -188,13 +188,13 @@ Please note, that since some settings are only available on certain platofrms (i
 #### Custom protection via file
 
 ```bash
-./zshield_protect.sh --protection-json-file "my_protection.json" [other options]
+./zshieldpro_protect.sh --protection-json-file "my_protection.json" [other options]
 ```
 
 #### Custom protection inline
 
 ```bash
-./zshield_protect.sh --protection-json '{"signatureVerification": true, "codeObfuscation": true}' [other options]
+./zshieldpro_protect.sh --protection-json '{"signatureVerification": true, "codeObfuscation": true}' [other options]
 ```
 
 ### Output
@@ -210,7 +210,7 @@ Sample output:
 ```text
 BUILD_ID=0b88138f-...-114a71e4e805
 PROTECTED_URL=https://s3.amazonaws.com/com.zimperium.usmtddemo.us-east-1.privatebucket/zshield/customer/81b72679-ddd6-4a9f-bcfd-845e71347671/app/57a6ecad-d949-4b2e-aeb0-6e5d6560d132/build/0b88138f-a484-49e0-91f5-114a71e4e805/protected-files/app.aab?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Date=<...>&X-Amz-SignedHeaders=host&X-Amz-Credential=<...%2F20260123%2Fus-east-1%2Fs3%2Faws4_request>&X-Amz-Expires=60&X-Amz-Signature=<...>
-PROTECTED_FILE=app_zshield_protected.aab
+PROTECTED_FILE=app_zshieldpro_protected.aab
 ```
 
 ### Error Handling
@@ -238,7 +238,7 @@ The script has not been extensively tested on other non-GNU Linux distributions 
 - Check file patterns match existing files
 - For large files, increase `--timeout-minutes` if needed
 - The script supports pagination for teams (if many exist)
-## zshield_protect.ps1
+## zshieldpro_protect.ps1
 
 A PowerShell script providing equivalent functionality to the bash version for uploading mobile app files to zShield Pro for protection, polling until processing is complete, and downloading the protected artifacts.
 
@@ -250,7 +250,7 @@ A PowerShell script providing equivalent functionality to the bash version for u
 ### Usage
 
 ```powershell
-./zshield_protect.ps1 [options]
+./zshieldpro_protect.ps1 [options]
 ```
 
 ### Options
@@ -301,7 +301,7 @@ Unlike Bash, which relies on built-in curl features to implement retries, PowerS
 
 ### Behavior Parity with Bash Version
 
-Refer to the [Bash section](#zshield_protectsh) for details on these features, as they work identically in the PowerShell version:
+Refer to the [Bash section](#zshieldpro_protectsh) for details on these features, as they work identically in the PowerShell version:
 
 - **Supported File Formats**: Accepts .apk, .aab, and .zip files
 - **Output File Handling**: Same single/multiple file processing logic and naming conventions (see [Output File Handling](#output-file-handling))
@@ -321,13 +321,13 @@ $env:console_url = "https://ziap.zimperium.com"
 $env:client_id = "your-client-id"
 $env:client_secret = "your-client-secret"
 
-./zshield_protect.ps1 -AppFile "build/*.apk" -TeamName "My Team" -GroupName "Production"
+./zshieldpro_protect.ps1 -AppFile "build/*.apk" -TeamName "My Team" -GroupName "Production"
 ```
 
 #### Using command-line parameters
 
 ```powershell
-./zshield_protect.ps1 `
+./zshieldpro_protect.ps1 `
   -ConsoleUrl "https://ziap.zimperium.com" `
   -ClientId "your-client-id" `
   -ClientSecret "your-client-secret" `
@@ -340,7 +340,7 @@ $env:client_secret = "your-client-secret"
 #### Processing with signing certificate
 
 ```powershell
-./zshield_protect.ps1 `
+./zshieldpro_protect.ps1 `
   -ConsoleUrl "https://ziap.zimperium.com" `
   -ClientId "your-client-id" `
   -ClientSecret "your-client-secret" `

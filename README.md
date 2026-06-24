@@ -1,6 +1,6 @@
-# zShieldPro-utils
+# zShield-utils
 
-Various utilities to use with zShield Pro
+Various utilities to use with zShield Pro and Enterprise
 
 ## zshieldpro_protect.sh
 
